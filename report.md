@@ -1,7 +1,8 @@
 # 优达学城数据分析课程P1项目记录
 
 ## 第一步 读入数据
-我下载的是上海地区的地图数据，由于地图数据过大，截取部分数据进行分析
+数据取自[OpenStreetMap](https://www.openstreetmap.org)，下载上海地区地图数据，由于地图数据过大，截取部分数据进行分析，截取后未压缩的OSM数据大小为79M  
+
 ```python
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
@@ -44,41 +45,12 @@ with open(SAMPLE_FILE, 'wb') as output:
 代码说明
 - osm文件放在input_data文件夹中，输出的csv文件放在output_data文件夹中，代码放在program文件夹中，三个文件夹在同一目录下
 
+源数据中的问题
+1. 道路和街道的英文名标注不统一，比如有的街道为st，有的为St.，有的道路标注为Rd
+经过数据清理后，街道英文名统一为Street，道路统一为Road，Ave统一为Avenue，核心代码如下，详细代码见`program/schema_data.py`
+
 ```python 
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 
-import csv
-import codecs
-import pprint
-import re
-import xml.etree.cElementTree as ET
-
-import cerberus
-
-import schema
-
-OSM_PATH = "../input_data/sample.osm"
-
-NODES_PATH = "../output_data/nodes.csv"
-NODE_TAGS_PATH = "../output_data/nodes_tags.csv"
-WAYS_PATH = "../output_data/ways.csv"
-WAY_NODES_PATH = "../output_data/ways_nodes.csv"
-WAY_TAGS_PATH = "../output_data/ways_tags.csv"
-
-LOWER_COLON = re.compile(r'^([a-z]|_)+:([a-z]|_)+')
-PROBLEMCHARS = re.compile(r'[=\+/&<>;\'"\?%#$@\,\. \t\r\n]')
-
-SCHEMA = schema.schema
-
-# Make sure the fields order in the csvs matches the column order in the sql table schema
-NODE_FIELDS = ['id', 'lat', 'lon', 'user', 'uid', 'version', 'changeset', 'timestamp']
-NODE_TAGS_FIELDS = ['id', 'key', 'value', 'type']
-WAY_FIELDS = ['id', 'user', 'uid', 'version', 'changeset', 'timestamp']
-WAY_TAGS_FIELDS = ['id', 'key', 'value', 'type']
-WAY_NODES_FIELDS = ['id', 'node_id', 'position']
-
-# UPDATE THIS VARIABLE
 mapping = {"St": "Street",
            "St.": "Street",
            'Str': 'Street',
@@ -98,157 +70,6 @@ def clean_data(name, mapping):
         words[-1] = mapping[words[-1]]
         name = ' '.join(words)
     return name
-
-
-def shape_element(element, node_attr_fields=NODE_FIELDS, way_attr_fields=WAY_FIELDS,
-                  problem_chars=PROBLEMCHARS, default_tag_type='regular'):
-    """Clean and shape node or way XML element to Python dict"""
-
-    node_attribs = {}
-    way_attribs = {}
-    way_nodes = []
-    tags = []  # Handle secondary tags the same way for both node and way elements
-
-    # YOUR CODE HERE
-    if element.tag == 'node':
-        node_attribs[NODE_FIELDS[0]] = int(element.attrib[node_attr_fields[0]])    # id：int类型
-        node_attribs[NODE_FIELDS[1]] = float(element.attrib[node_attr_fields[1]])  # lat：float类型
-        node_attribs[NODE_FIELDS[2]] = float(element.attrib[node_attr_fields[2]])  # lon：float类型
-        node_attribs[NODE_FIELDS[3]] = element.attrib[node_attr_fields[3]]         # user：string类型
-        node_attribs[NODE_FIELDS[4]] = int(element.attrib[node_attr_fields[4]])    # uid：int类型
-        node_attribs[NODE_FIELDS[5]] = element.attrib[node_attr_fields[5]]         # version：string类型
-        node_attribs[NODE_FIELDS[6]] = int(element.attrib[node_attr_fields[6]])    # changeset：int类型
-        node_attribs[NODE_FIELDS[7]] = element.attrib[node_attr_fields[7]]         # timestamp：string类型
-        for tag in element.iter('tag'):
-            tmp = {}
-            tmp[NODE_TAGS_FIELDS[0]] = int(element.attrib['id'])  # id：int类型
-            if LOWER_COLON.match(tag.attrib['k']):
-                words = tag.attrib['k'].split(':')
-                tmp[NODE_TAGS_FIELDS[1]] = words[-1]
-                tmp[NODE_TAGS_FIELDS[3]] = ' '.join(words[:-1])
-            elif problem_chars.match(tag.attrib['k']):
-                pass
-            else:
-                tmp[NODE_TAGS_FIELDS[1]] = tag.attrib['k']
-                tmp[NODE_TAGS_FIELDS[3]] = default_tag_type
-
-            tmp[NODE_TAGS_FIELDS[2]] = clean_data(tag.attrib['v'], mapping)#清理字段数据
-            tags.append(tmp)
-        # pprint.pprint({'node': node_attribs, 'node_tags': tags})
-        return {'node': node_attribs, 'node_tags': tags}
-    elif element.tag == 'way':
-        way_attribs[WAY_FIELDS[0]] = int(element.attrib[way_attr_fields[0]])  # id：int类型
-        way_attribs[WAY_FIELDS[1]] = element.attrib[way_attr_fields[1]]       # user：string类型
-        way_attribs[WAY_FIELDS[2]] = int(element.attrib[way_attr_fields[2]])  # uid：int类型
-        way_attribs[WAY_FIELDS[3]] = element.attrib[way_attr_fields[3]]       # version：string类型
-        way_attribs[WAY_FIELDS[4]] = int(element.attrib[way_attr_fields[4]])  # changeset：int类型
-        way_attribs[WAY_FIELDS[5]] = element.attrib[way_attr_fields[5]]       # timestamp：string类型
-
-        node_count = 0
-        for node in element.iter('nd'):
-            tmp = {}
-            tmp[WAY_NODES_FIELDS[0]] = int(element.attrib['id'])
-            tmp[WAY_NODES_FIELDS[1]] = int(node.attrib['ref'])
-            tmp[WAY_NODES_FIELDS[2]] = node_count
-            node_count += 1
-            way_nodes.append(tmp)
-        for tag in element.iter('tag'):
-            tmp = {}
-            tmp[WAY_TAGS_FIELDS[0]] = int(element.attrib['id'])
-            if LOWER_COLON.match(tag.attrib['k']):
-                words = tag.attrib['k'].split(':')
-                tmp[WAY_TAGS_FIELDS[1]] = words[-1]
-                tmp[WAY_TAGS_FIELDS[3]] = ' '.join(words[:-1])
-            else:
-                tmp[WAY_TAGS_FIELDS[1]] = tag.attrib['k']
-                tmp[WAY_TAGS_FIELDS[3]] = default_tag_type
-            tmp[WAY_TAGS_FIELDS[2]] = clean_data(tag.attrib['v'], mapping)#清理字段数据
-            tags.append(tmp)
-        # pprint.pprint({'way': way_attribs, 'way_nodes': way_nodes, 'way_tags': tags})
-        return {'way': way_attribs, 'way_nodes': way_nodes, 'way_tags': tags}
-
-
-# ================================================== #
-#               Helper Functions                     #
-# ================================================== #
-def get_element(osm_file, tags=('node', 'way', 'relation')):
-    """Yield element if it is the right type of tag"""
-
-    context = ET.iterparse(osm_file, events=('start', 'end'))
-    _, root = next(context)
-    for event, elem in context:
-        if event == 'end' and elem.tag in tags:
-            yield elem
-            root.clear()
-
-
-def validate_element(element, schema=SCHEMA):
-    """Raise ValidationError if element does not match schema"""
-
-    v = cerberus.Validator(schema)
-    if v(element) is not True:
-        for i in v.errors.items():
-            pprint.pprint(i)
-        field, errors = list(v.errors.items())
-        message_string = "\nElement of type '{0}' has the following errors:\n{1}".format(field, errors)
-        error_string = pprint.pformat(errors)
-        raise Exception(message_string.format(field, error_string))
-
-
-class UnicodeDictWriter(csv.DictWriter, object):
-    """Extend csv.DictWriter to handle Unicode input"""
-
-    def writerow(self, row):
-        super(UnicodeDictWriter, self).writerow({
-            k: (v.encode('utf-8') if isinstance(v, str) else v) for k, v in row.items()
-        })
-
-    def writerows(self, rows):
-        for row in rows:
-            self.writerow(row)
-
-
-# ================================================== #
-#               Main Function                        #
-# ================================================== #
-def process_map(file_in, validate):
-    """Iteratively process each XML element and write to csv(s)"""
-
-    with codecs.open(NODES_PATH, 'w') as nodes_file, \
-            codecs.open(NODE_TAGS_PATH, 'w') as nodes_tags_file, \
-            codecs.open(WAYS_PATH, 'w') as ways_file, \
-            codecs.open(WAY_NODES_PATH, 'w') as way_nodes_file, \
-            codecs.open(WAY_TAGS_PATH, 'w') as way_tags_file:
-
-        nodes_writer = UnicodeDictWriter(nodes_file, NODE_FIELDS)
-        node_tags_writer = UnicodeDictWriter(nodes_tags_file, NODE_TAGS_FIELDS)
-        ways_writer = UnicodeDictWriter(ways_file, WAY_FIELDS)
-        way_nodes_writer = UnicodeDictWriter(way_nodes_file, WAY_NODES_FIELDS)
-        way_tags_writer = UnicodeDictWriter(way_tags_file, WAY_TAGS_FIELDS)
-
-        nodes_writer.writeheader()
-        node_tags_writer.writeheader()
-        ways_writer.writeheader()
-        way_nodes_writer.writeheader()
-        way_tags_writer.writeheader()
-
-        for element in get_element(file_in, tags=('node', 'way')):
-            el = shape_element(element)
-            if el:
-                if validate is True:
-                    validate_element(el)
-                if element.tag == 'node':
-                    nodes_writer.writerow(el['node'])
-                    node_tags_writer.writerows(el['node_tags'])
-                elif element.tag == 'way':
-                    ways_writer.writerow(el['way'])
-                    way_nodes_writer.writerows(el['way_nodes'])
-                    way_tags_writer.writerows(el['way_tags'])
-
-if __name__ == '__main__':
-    # Note: Validation is ~ 10X slower. For the project consider using a small
-    # sample of the map when validating.
-    process_map(OSM_PATH, validate=False)
 ```
 
 遇到的问题
