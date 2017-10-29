@@ -82,11 +82,11 @@ def clean_data(name, mapping):
 原因：在进行shape_element时没有转换数据格式，同时validate_element函数没有起作用  
 在进行了数据类型转换后，数据插入正常
 
-新建或打开数据库
+1. 新建或打开数据库
 ```sql
 sqlite3.exe UdaOpenStreetMap.db
 ```
-建表
+2. 建表
 ```sql
 CREATE TABLE nodes (
     id INTEGER PRIMARY KEY NOT NULL,
@@ -133,7 +133,7 @@ CREATE TABLE ways_nodes (
 );
 ```
 
-将csv导入数据库
+3. 将csv导入数据库
 ```sql
 .mode csv  //csv模式
 .separator ","  //分隔符为‘，’
@@ -144,13 +144,47 @@ CREATE TABLE ways_nodes (
 .import ways_tags.csv ways_tags
 ```
 
-数据导入过程中也导入了列名，执行以下语句删除  
+4. 数据导入过程中也导入了列名，执行以下语句删除  
 ```sql
 delete from nodes_tags where id='id';
 delete from ways_tags where id='id';
 delete from wyas_nodes where id='id';
 ```
 
+5. 插入数据后查看数据库表
+```sql
+sqlite> select count(*) from nodes;
+387694
+sqlite> select count(*) from nodes_tags;
+28544
+sqlite> select count(*) from ways;
+47292
+sqlite> select count(*) from ways_tags;
+98376
+sqlite> select count(*) from ways_nodes;
+460424
+```
+6. 唯一用户数量
+```sql
+sqlite> select count(distinct(t.uid)) from (select n.user,n.uid from nodes as n
+union select w.user,w.uid from ways as w) as t;
+1545
+```
+7. node数量
+```sql
+sqlite> select count(distinct(id)) from nodes;
+387694
+```
+8. way数量
+```sql
+sqlite> select count(distinct(id)) from ways;
+47292
+```
+9. 商店节点数量
+```sql
+sqlite> select count(distinct(id)) from nodes_tags where key='shop';
+244
+```
 # 第四步 在数据库中探索数据
 
 1. 找出对地图贡献最多的前十名用户  
@@ -200,5 +234,4 @@ lat,user
 
 ## 第六步 改进意见
 
-有些街道和道路的汉语拼音字段缺失或者错误，已经有程序包可以实现根据汉字直接生成汉语拼音，因此可以用在地图数据的中，根据汉字直接生成汉语拼音，这种方式可以降低错误率同时使数据更加完整。
-还有一些汉语名称与汉语拼音混在一起，可以检查字符串是否同时包含汉语与英语进行更正。
+有些街道和道路的汉语拼音字段缺失或者错误，已经有程序包可以实现根据汉字直接生成汉语拼音，因此可以用在地图数据的中，根据汉字直接生成汉语拼音，这种方式可以降低错误率同时使数据更加完整，但是对一些多音字或者特殊读音的汉字还是会标注错误。还有一些汉语名称与汉语拼音混在一起，可以检查字符串是否同时包含汉语与英语进行更正。
